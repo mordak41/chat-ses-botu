@@ -3,9 +3,11 @@ import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import edge_tts
+from fastapi.responses import Response
 
 app = FastAPI()
 
+# Tüm tarayıcı ve köprü kısıtlamalarını tamamen kaldıran CORS ayarı
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,28 +16,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 1. HER TÜRLÜ PARAMETRE UYUMSUZLUĞUNU ÇÖZEN GÜVENLİ CHAT ENTEGRASYONU
 @app.post("/chat")
 async def chat_with_gemini(data: dict):
-    message = data.get("message")
-    api_key = data.get("api_key")
+    # Arayüzden gelebilecek hem ingilizce hem türkçe parametre anahtarlarını garantiye alıyoruz
+    mesaj = data.get("message") or data.get("mesaj")
+    api_key = data.get("api_key") or data.get("apiKey")
     
-    if not message or not api_key:
-        raise HTTPException(status_code=400, detail="Required parameters missing.")
+    if not mesaj or not api_key:
+        raise HTTPException(status_code=400, detail="Missing parameter: message or api_key")
     
     try:
-        genai.configure(api_key=api_key.strip())
+        # API anahtarının başındaki ve sonundaki boşlukları temizleyerek güvenle kuruyoruz
+        genai.configure(api_key=str(api_key).strip())
         model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(message)
+        
+        response = model.generate_content(str(mesaj))
         
         if response and response.text:
             return {"reply": response.text}
         else:
-            raise HTTPException(status_code=500, detail="Gemini returned empty text.")
+            raise HTTPException(status_code=500, detail="Gemini returned empty response.")
             
     except Exception as e:
-        print("Gemini Error:", str(e))
+        print("Gemini Backend Error:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+# 2. 10 BAYAN SES PARAMETRESİNİ ÇALIŞTIRAN TTS ENTEGRASYONU
 @app.get("/tts")
 async def text_to_speech(text: str, rate: str = "+0%", pitch: str = "+0Hz"):
     if not text:
@@ -47,7 +54,6 @@ async def text_to_speech(text: str, rate: str = "+0%", pitch: str = "+0Hz"):
             if chunk["type"] == "audio":
                 audio_data += chunk["data"]
                 
-        from fastapi.responses import Response
         return Response(content=audio_data, media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
