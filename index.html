@@ -25,18 +25,18 @@
     <h2>🛠️ Proje Hafıza Paneli (Canlı Sunucu)</h2>
     
     <label>Gemini API Anahtarı:</label>
-    <input type="text" id="apiKeys" placeholder="Google AI Studio'dan aldığınız anahtarı buraya yapıştırın">
+    <input type="text" id="apiKeys" placeholder="Google AI Studio anahtarınızı buraya yapıştırın">
     
     <label>Aktif Karakter Seçimi (10 Bayan Profili):</label>
     <select id="profileSelect"></select>
 
     <div class="chat-box" id="chatBox">
-        <div class="msg bot"><b>Sistem:</b> Sunucu bağlantısı hazır. Lütfen API anahtarınızı girin ve konuşmaya başlayın!</div>
+        <div class="msg bot"><b>Sistem:</b> Canlı bulut bağlantısı sağlandı. Tarayıcı engelleri sıfırlandı! API anahtarınızı girip konuşmayı başlatın!</div>
     </div>
     <div id="statusLabel" class="status"></div>
 
     <label>Mesajınız:</label>
-    <input type="text" id="userInput" placeholder="Bir şeyler yazın ve Gönder'e basın...">
+    <input type="text" id="userInput" placeholder="Bir şeyler yazın...">
     <button id="sendBtn">Mesajı Gönder & Konuştur</button>
 </div>
 
@@ -54,7 +54,9 @@ const profiller = [
     { isim: "İrem", karakter: "Kurumsal", rate: "-2%", pitch: "+0Hz" }
 ];
 
-let aktifProfil = profiller[0];
+// Sunucu içerisinden çalışacağı için kendi adresini dinamik algılar
+const serverUrl = window.location.origin;
+let aktifProfil = profiller[0]; 
 let sesElementi = new Audio();
 
 const select = document.getElementById("profileSelect");
@@ -72,29 +74,29 @@ select.addEventListener("change", function() {
 
 document.getElementById("statusLabel").innerText = aktifProfil.isim + " profili seçildi.";
 
-async function geminiSorguGonder(mesaj, apiKey) {
-    const url = "https://googleapis.com" + apiKey.trim();
+async function sunucuUzerindenSor(mesaj, apiKey) {
     try {
         document.getElementById("statusLabel").innerText = aktifProfil.isim + " düşünüyor...";
-        const response = await fetch(url, {
+        const response = await fetch(serverUrl + "/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: [{ text: mesaj }] }] })
+            body: JSON.stringify({ message: mesaj, api_key: apiKey.trim() })
         });
-        if (!response.ok) return null;
+
+        if (!response.ok) { return null; }
         const data = await response.json();
-        return data.candidates[0].content.parts[0].text.replace(/[*#_]/g, "").trim();
+        return data.reply.replace(/[*#_]/g, "").trim();
     } catch (error) {
-        console.error(error);
+        console.error("İletişim Hatası:", error);
         return null;
     }
 }
 
 function sesiOynat(metin) {
     document.getElementById("statusLabel").innerText = aktifProfil.isim + " konuşuyor...";
-    const url = "/tts?text=" + encodeURIComponent(metin) + "&rate=" + encodeURIComponent(aktifProfil.rate) + "&pitch=" + encodeURIComponent(aktifProfil.pitch);
+    const url = serverUrl + "/tts?text=" + encodeURIComponent(metin) + "&rate=" + encodeURIComponent(aktifProfil.rate) + "&pitch=" + encodeURIComponent(aktifProfil.pitch);
     sesElementi.src = url;
-    sesElementi.play().catch(e => console.error(e));
+    sesElementi.play().catch(e => console.error("Ses oynatılamadı:", e));
 }
 
 async function mesajGonder() {
@@ -102,19 +104,21 @@ async function mesajGonder() {
     const userInput = document.getElementById("userInput").value;
     const chatBox = document.getElementById("chatBox");
 
-    if(!keyInput || !userInput.trim()) return;
+    if(!keyInput) { alert("Lütfen Gemini API anahtarınızı girin!"); return; }
+    if(!userInput.trim()) return;
 
     chatBox.innerHTML += '<div class="msg user"><b>Siz:</b> ' + userInput + '</div>';
     document.getElementById("userInput").value = "";
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    const botCevap = await geminiSorguGonder(userInput, keyInput);
+    const botCevap = await sunucuUzerindenSor(userInput, keyInput);
+    
     if(botCevap) {
         chatBox.innerHTML += '<div class="msg bot"><b>' + aktifProfil.isim + ':</b> ' + botCevap + '</div>';
         chatBox.scrollTop = chatBox.scrollHeight;
         sesiOynat(botCevap);
     } else {
-        document.getElementById("statusLabel").innerText = "Hata oluştu. Anahtarınızı veya CORS durumunu kontrol edin.";
+        alert("Bağlantı doğrulanamadı. Lütfen API anahtarınızın geçerli olduğunu kontrol edin.");
     }
 }
 
