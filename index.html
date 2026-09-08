@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yapay Zeka 10 Bayan Profili</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { max-width: 600px; width: 100%; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; }
+        label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; color: #555; }
+        select, input, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; font-size: 16px; }
+        button { background: #2ecc71; color: white; border: none; cursor: pointer; font-weight: bold; transition: background 0.3s; }
+        button:hover { background: #27ae60; }
+        .chat-box { height: 250px; border: 1px solid #eee; border-radius: 6px; padding: 10px; overflow-y: auto; background: #fafafa; margin-top: 15px; }
+        .msg { margin-bottom: 10px; padding: 10px; border-radius: 6px; max-width: 85%; }
+        .user { background: #e1f5fe; margin-left: auto; text-align: right; }
+        .bot { background: #f1f8e9; margin-right: auto; }
+        .status { font-size: 12px; color: #888; text-align: center; margin-top: 5px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🛠️ Proje Hafıza Paneli (Canlı Sunucu)</h2>
+    
+    <label>Gemini API Anahtarı:</label>
+    <input type="text" id="apiKeys" placeholder="Google AI Studio'dan aldığınız anahtarı buraya yapıştırın">
+    
+    <label>Aktif Karakter Seçimi (10 Bayan Profili):</label>
+    <select id="profileSelect"></select>
+
+    <div class="chat-box" id="chatBox">
+        <div class="msg bot"><b>Sistem:</b> Sunucu bağlantısı hazır. Lütfen API anahtarınızı girin ve konuşmaya başlayın!</div>
+    </div>
+    <div id="statusLabel" class="status"></div>
+
+    <label>Mesajınız:</label>
+    <input type="text" id="userInput" placeholder="Bir şeyler yazın ve Gönder'e basın...">
+    <button id="sendBtn">Mesajı Gönder & Konuştur</button>
+</div>
+
+<script>
+const profiller = [
+    { isim: "Aslı", karakter: "Standart", rate: "+0%", pitch: "+0Hz" },
+    { isim: "Merve", karakter: "Genç / Hızlı", rate: "+8%", pitch: "+3Hz" },
+    { isim: "Selin", karakter: "Olgun / Sakin", rate: "-5%", pitch: "-3Hz" },
+    { isim: "Buse", karakter: "Heyecanlı", rate: "+12%", pitch: "+2Hz" },
+    { isim: "Elif", karakter: "İnce Sesli", rate: "+6%", pitch: "+6Hz" },
+    { isim: "Zeynep", karakter: "Gizemli", rate: "-6%", pitch: "-5Hz" },
+    { isim: "Derin", karakter: "Dizi Karakteri", rate: "+3%", pitch: "-1Hz" },
+    { isim: "Ece", karakter: "Sempatik", rate: "+4%", pitch: "+1Hz" },
+    { isim: "Melis", karakter: "Melankolik", rate: "-10%", pitch: "-2Hz" },
+    { isim: "İrem", karakter: "Kurumsal", rate: "-2%", pitch: "+0Hz" }
+];
+
+let aktifProfil = profiller[0];
+let sesElementi = new Audio();
+
+const select = document.getElementById("profileSelect");
+profiller.forEach((p, index) => {
+    let opt = document.createElement("option");
+    opt.value = index;
+    opt.innerText = p.isim + " (" + p.karakter + ")";
+    select.appendChild(opt);
+});
+
+select.addEventListener("change", function() {
+    aktifProfil = profiller[select.value];
+    document.getElementById("statusLabel").innerText = aktifProfil.isim + " profili seçildi.";
+});
+
+document.getElementById("statusLabel").innerText = aktifProfil.isim + " profili seçildi.";
+
+async function geminiSorguGonder(mesaj, apiKey) {
+    const url = "https://googleapis.com" + apiKey.trim();
+    try {
+        document.getElementById("statusLabel").innerText = aktifProfil.isim + " düşünüyor...";
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ parts: [{ text: mesaj }] }] })
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.candidates[0].content.parts[0].text.replace(/[*#_]/g, "").trim();
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+function sesiOynat(metin) {
+    document.getElementById("statusLabel").innerText = aktifProfil.isim + " konuşuyor...";
+    const url = "/tts?text=" + encodeURIComponent(metin) + "&rate=" + encodeURIComponent(aktifProfil.rate) + "&pitch=" + encodeURIComponent(aktifProfil.pitch);
+    sesElementi.src = url;
+    sesElementi.play().catch(e => console.error(e));
+}
+
+async function mesajGonder() {
+    const keyInput = document.getElementById("apiKeys").value;
+    const userInput = document.getElementById("userInput").value;
+    const chatBox = document.getElementById("chatBox");
+
+    if(!keyInput || !userInput.trim()) return;
+
+    chatBox.innerHTML += '<div class="msg user"><b>Siz:</b> ' + userInput + '</div>';
+    document.getElementById("userInput").value = "";
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    const botCevap = await geminiSorguGonder(userInput, keyInput);
+    if(botCevap) {
+        chatBox.innerHTML += '<div class="msg bot"><b>' + aktifProfil.isim + ':</b> ' + botCevap + '</div>';
+        chatBox.scrollTop = chatBox.scrollHeight;
+        sesiOynat(botCevap);
+    } else {
+        document.getElementById("statusLabel").innerText = "Hata oluştu. Anahtarınızı veya CORS durumunu kontrol edin.";
+    }
+}
+
+document.getElementById("sendBtn").addEventListener("click", mesajGonder);
+</script>
+</body>
+</html>
