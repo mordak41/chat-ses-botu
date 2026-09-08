@@ -1,15 +1,12 @@
 import os
-import io
-import asyncio
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+import google.generativeai as genai
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import edge_tts
-import google.generativeai as genai
 
-app = FastAPI(title="Yapay Zeka 10 Bayan Sesi ve Sohbet Motoru")
+app = FastAPI()
 
-# TARAYICI ENGELİNİ (CORS) SUNUCU SEVİYESİNDE TAMAMEN KALDIRAN KRİTİK AYAR
+# Tarayıcı güvenlik engellerini (CORS) kökten kaldıran kritik ayar
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,60 +15,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. BAĞLANTI: Tarayıcıdan Gelen İstekleri Gemini API'ye İleten Güvenli Köprü (Proxy)
 @app.post("/chat")
 async def chat_with_gemini(data: dict):
     mesaj = data.get("message")
     api_key = data.get("api_key")
     
     if not mesaj or not api_key:
-        raise HTTPException(status_code=400, detail="Mesaj veya API anahtarı girilmedi.")
+        raise HTTPException(status_code=400, detail="Mesaj veya API anahtarı eksik.")
     
     try:
-        # Gelen API Anahtarı ile Google Yapay Zeka Kurulumu Yapılıyor
+        # Google Yapay Zeka Entegrasyonu Kurulumu
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
         
-        # İstek asenkron iş parçacığına taşınarak bloklama önleniyor
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, model.generate_content, mesaj)
-        
+        response = model.generate_content(mesaj)
         return {"reply": response.text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API Hatası: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# 2. SESLENDİRME: Microsoft Edge TTS Altyapısı ile 10 Profil Üretim Motoru
 @app.get("/tts")
-async def text_to_speech(
-    text: str = Query(..., description="Seslendirilecek metin"),
-    rate: str = Query("+0%", description="Hız parametresi"),
-    pitch: str = Query("+0Hz", description="Perde/Ton parametresi")
-):
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Metin içeriği boş olamaz.")
+async def text_to_speech(text: str, rate: str = "+0%", pitch: str = "+0Hz"):
+    if not text:
+        raise HTTPException(status_code=400, detail="Metin parametresi eksik.")
         
     try:
-        # Temel Türkçe bayan sesi üzerinden kurgu yapılıyor
-        voice = "tr-TR-EmelNeural"
+        # Mevcut ücretsiz Edge TTS seslendirme altyapınız
+        communicate = edge_tts.Communicate(text, "tr-TR-EmelNeural", rate=rate, pitch=pitch)
         
-        # Edge TTS asenkron iletişim mimarisi kurgulanıyor
-        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+        # Sesi anlık olarak belleğe yazıp akış (Stream) şeklinde fırlatıyoruz
+        from fastapi.responses import StreamingResponse
+        import io
         
-        # Ses verisi anlık akış (stream) haline getiriliyor
-        audio_stream = io.BytesIO()
+        audio_data = io.BytesIO()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                audio_stream.write(chunk["data"])
+                audio_data.write(chunk["data"])
                 
-        audio_stream.seek(0)
-        
-        # Oluşan canlı ses verisi doğrudan tarayıcıya (Audio elementine) üfleniyor
-        return StreamingResponse(audio_stream, media_type="audio/mpeg")
-        
+        audio_data.seek(0)
+        return StreamingResponse(audio_data, media_type="audio/mpeg")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ses Üretim Hatası: {str(e)}")
-
-# Sunucunun boş kök adresine girildiğinde FastAPI'nin hata vermesini önleyen ufak bilgilendirme
-@app.get("/")
-async def root():
-    return {"status": "online", "message": "Yapay Zeka 10 Bayan Ses ve Sohbet sunucusu başarıyla çalışıyor."}
+        raise HTTPException(status_code=500, detail=str(e))
