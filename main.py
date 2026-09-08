@@ -6,7 +6,7 @@ import edge_tts
 
 app = FastAPI()
 
-# Tarayıcı güvenlik engellerini (CORS) kökten kaldıran kritik ayar
+# Tarayıcı iletişim kilitlerini tamamen açan CORS ayarı
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,6 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 1. ENGELLERİ AŞAN GÜVENLİ GEMİNİ CHAT BAĞLANTISI (Düzeltilen Kısım)
 @app.post("/chat")
 async def chat_with_gemini(data: dict):
     mesaj = data.get("message")
@@ -24,34 +25,41 @@ async def chat_with_gemini(data: dict):
         raise HTTPException(status_code=400, detail="Mesaj veya API anahtarı eksik.")
     
     try:
-        # Google Yapay Zeka Entegrasyonu Kurulumu
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Google API Yapılandırması ve En Kararlı Başlatma Metodu
+        genai.configure(api_key=api_key.strip())
         
+        # En sorunsuz çalışan model tanımı
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Metin üretimi tetikleniyor
         response = model.generate_content(mesaj)
-        return {"reply": response.text}
+        
+        if response and response.text:
+            return {"reply": response.text}
+        else:
+            raise HTTPException(status_code=500, detail="Gemini boş yanıt döndürdü.")
+            
     except Exception as e:
+        # Hatayı Render loglarına basması için genişletiyoruz
+        print("Gemini Motor Hatası:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+# 2. MEVCUT ÇALIŞAN SESLENDİRME ALTYAPINIZ (EDGE TTS)
 @app.get("/tts")
 async def text_to_speech(text: str, rate: str = "+0%", pitch: str = "+0Hz"):
     if not text:
-        raise HTTPException(status_code=400, detail="Metin parametresi eksik.")
-        
+        raise HTTPException(status_code=400, detail="Metin boş olamaz.")
     try:
-        # Mevcut ücretsiz Edge TTS seslendirme altyapınız
+        # Sizin projenizdeki tr-TR-EmelNeural temel ses motoru
         communicate = edge_tts.Communicate(text, "tr-TR-EmelNeural", rate=rate, pitch=pitch)
         
-        # Sesi anlık olarak belleğe yazıp akış (Stream) şeklinde fırlatıyoruz
-        from fastapi.responses import StreamingResponse
-        import io
-        
-        audio_data = io.BytesIO()
+        # Sesi anlık olarak belleğe akıtıp tarayıcıya yolluyoruz
+        audio_data = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                audio_data.write(chunk["data"])
+                audio_data += chunk["data"]
                 
-        audio_data.seek(0)
-        return StreamingResponse(audio_data, media_type="audio/mpeg")
+        from fastapi.responses import Response
+        return Response(content=audio_data, media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
